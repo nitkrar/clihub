@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # Nothing is installed on purpose -- no venv, no pytest, no tomlkit. clihub
+    # claims to run from a checkout on a bare interpreter, and a runner is the
+    # only machine where that claim is actually under test.
+    name: ${{ matrix.os }} / python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: run from the checkout, nothing installed
+        run: PYTHONPATH=src python -m clihub --version
+
+      - name: tests
+        run: python -m unittest discover -s tests -t .
+
+      - name: build, and run what was built
+        run: |
+          python -m pip install --quiet .
+          ch --version
+          ch doctor

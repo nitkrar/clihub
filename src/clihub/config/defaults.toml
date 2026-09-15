@@ -1,0 +1,49 @@
+# clihub defaults. Do not edit — override in ~/.clihub/config.toml, where only the
+# keys you set are used. `ch init` writes that file with every key below commented
+# out, so uncommenting one is the whole interaction.
+# Anything not listed here is structural: changing it would break dispatch, not tune it.
+
+[describe]
+# Seconds to wait for a tool's --help when checking whether a description you
+# wrote looks copied from it. Nothing else runs a tool to learn about it.
+timeout_seconds = 2.0
+
+# How to ask a tool for its help, in order. First form producing output wins.
+help_forms = ["--help", "help", "-h"]
+
+# Warn when a description looks copied from the tool's own help. Advisory; the
+# description is stored either way. Off also skips the help probe.
+overlap_check = true
+
+# Fraction of the description's words that must appear in the help to warn.
+# Raising this does not remove false positives — some good descriptions score 1.00.
+overlap_warn = 0.6
+
+# Text of that warning. {tool} is the name being added.
+overlap_warning = "description added for {tool} but looks like a command list, say what it's for instead"
+
+[find]
+# How close a single word must be to a command's name to be offered as a typo of
+# it. Names only, never descriptions. At 0.4 a word like `note` matches unrelated
+# names outright; 0.7 is what makes that class of noise unreachable. Raise it
+# towards 1.0 to only ever correct near-exact misspellings.
+typo_cutoff = 0.7
+
+[completions]
+# Whether `ch init` installs shell completion. Off by default: init should not edit
+# your shell config unless asked. Turn it on here, or pass `ch init --completions`,
+# or install later with `ch tools completion`.
+completions_auto_enabled = false
+
+# Whether an already-installed completion script does anything. The script greps for
+# this before offering candidates, so turning it off takes effect on the next tab
+# without reinstalling or editing your shell config.
+completions_enabled = true
+
+[journal]
+# Record every invocation to ~/.clihub/log/invocations.jsonl.
+enabled = true
+
+# Rotation. A record is ~80 bytes, so 1 MiB is ~13,000 invocations per file.
+max_bytes = 1048576
+backup_count = 5

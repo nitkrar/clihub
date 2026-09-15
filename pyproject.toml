@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clihub"
+dynamic = ["version"]
+description = "Personal umbrella CLI router"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+# tomlkit is vendored, so clihub runs from a checkout with nothing installed.
+# See src/clihub/_vendor/README.md.
+dependencies = []
+
+[project.scripts]
+clihub = "clihub.cli:main"
+ch = "clihub.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = {attr = "clihub.__version__"}
+
+# defaults.toml ships with the package: it is both the source of every tunable
+# default and the documentation of what is tunable at all.
+[tool.setuptools.package-data]
+"clihub.config" = ["defaults.toml"]
+"clihub._vendor" = ["*.whl", "README.md"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["clihub*"]
+exclude = ["apps", "apps.*"]
+namespaces = false
