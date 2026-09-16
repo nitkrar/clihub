@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-from .. import completion, config
+from .. import completion, config, install
 from ..config import load as load_settings
 from ..errors import BuiltinError
 from ..paths import Paths
@@ -47,12 +47,21 @@ def run(argv: list[str], paths: Paths) -> int:
     if args.no_link:
         return 0
 
-    source = _console_script()
+    source = install.console_script()
     if source is None:
         sys.stderr.write(
             "could not locate the installed `ch` script; skipping the symlink.\n"
             "  install with: pip install -e . ; then re-run ch init\n"
         )
+        return 0
+
+    # pip, pipx, uv and Homebrew all put `ch` on PATH themselves, and they
+    # maintain it across upgrades. A link of our own is a second copy competing
+    # with whoever installed clihub, so it is only for the case it was written
+    # for: a checkout whose venv is not active.
+    reachable = install.on_path()
+    if reachable is not None and not args.force and install.same_install(reachable, source):
+        print(f"command    {reachable}  already on PATH")
         return 0
 
     link_dir = Path(args.link_dir).expanduser()
@@ -114,39 +123,6 @@ def _install_completions(paths: Paths, *, choice: bool | None) -> None:
     from .tools import install_completion
 
     install_completion(paths, completion.detect_shell())
-
-
-def _console_script() -> Path | None:
-    """The `ch` pip installed, which sits next to the interpreter running us.
-
-    Deliberately NOT resolved: a venv's bin/python is a symlink back to the base
-    interpreter, so resolving it lands in the Homebrew Cellar and leaves the venv
-    entirely — where no `ch` exists. The opposite of dispatch, which must resolve to
-    find a tool's real path.
-    """
-    here = Path(sys.executable).parent
-    for directory in (_outlives_upgrades(here), here):
-        script = directory / "ch"
-        if script.is_file():
-            return script
-    return None
-
-
-def _outlives_upgrades(bin_dir: Path) -> Path:
-    """The same directory named so that a Homebrew upgrade cannot invalidate it.
-
-    Homebrew installs a formula under `Cellar/<formula>/<version>` and points
-    `opt/<formula>` at whichever version is current, deleting the tree it
-    replaced. A link into Cellar dangles one upgrade later; the opt path does
-    not. Any other layout is returned unchanged.
-    """
-    parts = bin_dir.parts
-    if "Cellar" not in parts:
-        return bin_dir
-    cellar = parts.index("Cellar")
-    if len(parts) <= cellar + 2:
-        return bin_dir
-    return Path(*parts[:cellar], "opt", parts[cellar + 1], *parts[cellar + 3:])
 
 
 def _link(source: Path, link: Path, *, force: bool) -> None:

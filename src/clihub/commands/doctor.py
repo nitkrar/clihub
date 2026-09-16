@@ -20,11 +20,10 @@ is silently inert.
 """
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
-from .. import completion, config, registry
+from .. import completion, config, install, registry
 from ..paths import Paths
 from ..render import render_rows, render_text
 
@@ -100,18 +99,18 @@ def _setup_issues(paths: Paths) -> list:
             )
         )
 
-    found = shutil.which("ch")
+    found = install.on_path()
     if found is None:
         issues.append(
             registry.DoctorIssue("ch", "not on PATH; run ch init", registry.ADVISORY)
         )
     else:
-        running = Path(sys.argv[0]).resolve()
-        if running.name in ("ch", "clihub") and Path(found).resolve() != running:
+        running = Path(sys.argv[0])
+        if running.name in ("ch", "clihub") and not install.same_install(found, running):
             issues.append(
                 registry.DoctorIssue(
                     "ch",
-                    f"PATH has a different install: {Path(found).resolve()}",
+                    f"PATH has a different install: {found.resolve()}",
                     registry.ADVISORY,
                 )
             )

@@ -10,6 +10,14 @@ from .fixture import PYTHON, ROOT, ClihubFixture
 class DoctorTests(ClihubFixture):
     """What doctor and `registry validate` report, and which findings fail."""
 
+    def test_the_sibling_ch_is_not_reported_as_another_install(self) -> None:
+        """`ch` and `clihub` are two files in one bin. Compared as paths they
+        never match, so every install looks like two to the install running it."""
+        result = self.run_installed(self.write_install(), "clihub", "doctor")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("different install", result.stdout)
+
     def test_doctor_names_an_unquoted_space_rather_than_a_missing_target(self) -> None:
         spaced_dir = self.tools_root / "My Tools"
         spaced = self.write_router_tool("space.py", "space", directory=spaced_dir)

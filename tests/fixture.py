@@ -69,6 +69,39 @@ class ClihubFixture(unittest.TestCase):
             start_new_session=True,
         )
 
+    def write_install(self) -> Path:
+        """A bin holding both console scripts and the interpreter they run on,
+        which is the shape pip, pipx, uv and Homebrew all produce. The shebang
+        is what puts `sys.executable` in that bin, as a real install does."""
+        # A real venv, not a directory with a python symlink in it: without
+        # pyvenv.cfg the interpreter resolves the symlink and reports the base
+        # installation, so the bin holding the scripts would never be found.
+        venv = self.base / "installed"
+        subprocess.run([PYTHON, "-m", "venv", "--without-pip", str(venv)], check=True)
+        bin_dir = venv / "bin"
+        for name in ("ch", "clihub"):
+            script = bin_dir / name
+            script.write_text(
+                f"#!{bin_dir / 'python'}\n"
+                "import sys\n"
+                "from clihub.cli import main\n"
+                "sys.exit(main())\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+        return bin_dir
+
+    def run_installed(
+        self, bin_dir: Path, name: str, *args: str, timeout: float = 10.0
+    ) -> subprocess.CompletedProcess[str]:
+        """Run one of those console scripts with its own bin ahead on PATH."""
+        env = dict(self.env)
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        return subprocess.run(
+            [str(bin_dir / name), *args],
+            cwd=ROOT, env=env, text=True, capture_output=True, timeout=timeout,
+        )
+
     def write_tool(self, name: str, body: str, directory: Path | None = None) -> Path:
         target_dir = self.tools_root if directory is None else directory
         target_dir.mkdir(parents=True, exist_ok=True)

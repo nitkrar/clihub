@@ -219,13 +219,37 @@ class SetupTests(ClihubFixture):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((link_dir / "ch").is_symlink())
 
+    def test_init_does_not_link_over_an_install_already_on_path(self) -> None:
+        """pip, pipx, uv and Homebrew all put `ch` on PATH themselves. Linking a
+        second copy there is init competing with whoever installed clihub."""
+        bin_dir = self.write_install()
+        link_dir = self.base / "bin"
+
+        with self.subTest("leaves PATH alone"):
+            result = self.run_installed(
+                bin_dir, "clihub", "init", "--link-dir", str(link_dir), "--no-completions"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(
+                (link_dir / "ch").exists(),
+                "init linked a second ch over one already on PATH",
+            )
+
+        with self.subTest("--force still links"):
+            result = self.run_installed(
+                bin_dir, "clihub", "init", "--link-dir", str(link_dir),
+                "--no-completions", "--force",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((link_dir / "ch").is_symlink())
+
     def test_the_link_target_survives_an_upgrade_under_it(self) -> None:
         """Homebrew runs clihub from Cellar/<formula>/<version>/ and deletes that
         directory the moment the formula is upgraded. A link recorded there is
         dangling by the time the user types `ch`."""
         from unittest import mock
 
-        from clihub.commands import init as init_module
+        from clihub import install as install_module
 
         prefix = self.base / "brew"
         old = prefix / "Cellar" / "clihub" / "1.0.1" / "libexec" / "bin"
@@ -234,8 +258,8 @@ class SetupTests(ClihubFixture):
         (prefix / "opt").mkdir()
         (prefix / "opt" / "clihub").symlink_to(old.parent.parent)
 
-        with mock.patch.object(init_module.sys, "executable", str(old / "python")):
-            found = init_module._console_script()
+        with mock.patch.object(install_module.sys, "executable", str(old / "python")):
+            found = install_module.console_script()
 
         self.assertIsNotNone(found)
 

@@ -17,15 +17,25 @@ description instead of by memory.
 ## Install
 
 ```sh
-pip install -e .   # creates `ch`, inside that virtualenv only
-ch init            # symlinks it into ~/.local/bin, and writes ~/.clihub/config.toml
+brew install nitkrar/tap/clihub    # or: pipx install clihub-cli
+ch init
 ```
 
-Both steps matter. `pip install` gives you the command but leaves it in the
-virtualenv's `bin/`, so `ch` only resolves while that virtualenv is active.
-`ch init` is what makes it work from anywhere; it also writes `config.toml` with
-every setting present and commented out, which is where the tunables are
-documented. It tells you if `~/.local/bin` is not on your PATH.
+The distribution is `clihub-cli`; the commands it installs are `ch` and
+`clihub`. Either installer puts both on PATH and keeps them there across
+upgrades, so `ch init` does not touch PATH — it writes `config.toml` with every
+setting present and commented out, which is where the tunables are documented.
+
+Installing into a virtualenv instead leaves `ch` in that virtualenv's `bin/`,
+where it only resolves while the virtualenv is active:
+
+```sh
+pip install -e .   # creates `ch`, inside that virtualenv only
+ch init            # symlinks it into ~/.local/bin as well
+```
+
+That is the case `ch init`'s symlink is for. It tells you if `~/.local/bin` is
+not on your PATH.
 
 Add `--completions` to install shell completion at the same time, or run
 `ch tools completion` later.
