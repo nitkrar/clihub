@@ -5,7 +5,7 @@ from pathlib import Path as _Path
 
 # The only copy. pyproject reads this attribute rather than restating it, so a
 # release cannot ship a number that disagrees with what `ch --version` prints.
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 # Vendored tomlkit, imported straight from the wheel. See _vendor/README.md.
 _sys.path.insert(0, str(_Path(__file__).parent / "_vendor" /

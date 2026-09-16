@@ -3,7 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "clihub"
+# The import package and both commands are `clihub`; only the distribution
+# carries the suffix, because `clihub` on PyPI belongs to an unrelated project.
+name = "clihub-cli"
 dynamic = ["version"]
 description = "Personal umbrella CLI router"
 readme = "README.md"
@@ -13,6 +15,10 @@ requires-python = ">=3.12"
 # tomlkit is vendored, so clihub runs from a checkout with nothing installed.
 # See src/clihub/_vendor/README.md.
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/nitkrar/clihub"
+Source = "https://github.com/nitkrar/clihub"
 
 [project.scripts]
 clihub = "clihub.cli:main"
