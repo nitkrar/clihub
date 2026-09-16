@@ -73,6 +73,34 @@ A comment says **why** the code is the way it is, where that is not evident from
 reading it. It does not narrate what the code used to be, restate what the code says,
 or carry benchmark numbers.
 
+## Releasing
+
+The version lives in `src/clihub/__init__.py` and pyproject reads it. On PyPI the
+distribution is `clihub-cli`, because `clihub` there belongs to an unrelated
+project; the import package and both commands are unaffected.
+
+1. Bump `__version__`, commit.
+2. `git tag -a vX.Y.Z -m "clihub X.Y.Z" && git push origin main --tags`. The
+   release workflow runs the tests, refuses a tag that disagrees with
+   `__version__`, and publishes to PyPI.
+3. Point the formula in `nitkrar/homebrew-tap` at the new tag:
+
+```sh
+curl -sL -o /tmp/c.tar.gz \
+  https://github.com/nitkrar/clihub/archive/refs/tags/vX.Y.Z.tar.gz
+shasum -a 256 /tmp/c.tar.gz
+```
+
+   Edit `url` and `sha256` in `Formula/clihub.rb`, commit, push.
+
+PyPI uploads need a one-time trusted publisher configured on pypi.org for project
+`clihub-cli`: owner `nitkrar`, repository `clihub`, workflow `release.yml`. No API
+token is stored anywhere.
+
+The formula links `clihub` only. `ch` stays `clihub init`'s job, and because init
+resolves the target through `sys.executable` it lands in the versioned Cellar
+path, so a brew upgrade needs `clihub init --force` after it.
+
 ## Things that will bite you
 
 - **zsh does not word-split unquoted parameters.** `for c in "a b"; do ch $c; done`
