@@ -124,8 +124,29 @@ def _console_script() -> Path | None:
     entirely — where no `ch` exists. The opposite of dispatch, which must resolve to
     find a tool's real path.
     """
-    candidate = Path(sys.executable).parent / "ch"
-    return candidate if candidate.is_file() else None
+    here = Path(sys.executable).parent
+    for directory in (_outlives_upgrades(here), here):
+        script = directory / "ch"
+        if script.is_file():
+            return script
+    return None
+
+
+def _outlives_upgrades(bin_dir: Path) -> Path:
+    """The same directory named so that a Homebrew upgrade cannot invalidate it.
+
+    Homebrew installs a formula under `Cellar/<formula>/<version>` and points
+    `opt/<formula>` at whichever version is current, deleting the tree it
+    replaced. A link into Cellar dangles one upgrade later; the opt path does
+    not. Any other layout is returned unchanged.
+    """
+    parts = bin_dir.parts
+    if "Cellar" not in parts:
+        return bin_dir
+    cellar = parts.index("Cellar")
+    if len(parts) <= cellar + 2:
+        return bin_dir
+    return Path(*parts[:cellar], "opt", parts[cellar + 1], *parts[cellar + 3:])
 
 
 def _link(source: Path, link: Path, *, force: bool) -> None:

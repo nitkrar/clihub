@@ -364,7 +364,10 @@ Rules:
   with every key commented out, and symlinks `ch` into `--link-dir`
   (default `~/.local/bin`). It is the one command run by full path, because its
   purpose is that `ch` is not yet on PATH. Idempotent; it refuses to replace a
-  foreign `ch` without `--force`.
+  foreign `ch` without `--force`. The link points beside the running interpreter,
+  except under Homebrew, where `Cellar/<formula>/<version>` is rewritten to
+  `opt/<formula>`: the versioned directory is deleted on the next upgrade, and a
+  link into it would dangle.
 - `--` marks the start of the stored command prefix. argparse handles the separator
   natively, which is why `registry add` no longer walks its tokens by hand — and it
   is what sets `requires-python`. Below 3.12 the same command fails with

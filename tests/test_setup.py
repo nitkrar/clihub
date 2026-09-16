@@ -219,6 +219,35 @@ class SetupTests(ClihubFixture):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((link_dir / "ch").is_symlink())
 
+    def test_the_link_target_survives_an_upgrade_under_it(self) -> None:
+        """Homebrew runs clihub from Cellar/<formula>/<version>/ and deletes that
+        directory the moment the formula is upgraded. A link recorded there is
+        dangling by the time the user types `ch`."""
+        from unittest import mock
+
+        from clihub.commands import init as init_module
+
+        prefix = self.base / "brew"
+        old = prefix / "Cellar" / "clihub" / "1.0.1" / "libexec" / "bin"
+        old.mkdir(parents=True)
+        (old / "ch").write_text("#!/bin/sh\n", encoding="utf-8")
+        (prefix / "opt").mkdir()
+        (prefix / "opt" / "clihub").symlink_to(old.parent.parent)
+
+        with mock.patch.object(init_module.sys, "executable", str(old / "python")):
+            found = init_module._console_script()
+
+        self.assertIsNotNone(found)
+
+        new = prefix / "Cellar" / "clihub" / "1.0.2" / "libexec" / "bin"
+        new.mkdir(parents=True)
+        (new / "ch").write_text("#!/bin/sh\n", encoding="utf-8")
+        (prefix / "opt" / "clihub").unlink()
+        (prefix / "opt" / "clihub").symlink_to(new.parent.parent)
+        shutil.rmtree(old.parent.parent)
+
+        self.assertTrue(found.is_file(), f"{found} did not survive the upgrade")
+
     def test_clihub_writes_only_inside_its_configured_roots(self) -> None:
         """Everything lands under the one root, and the disposable parts in
         the subdirectories named for being disposable."""
