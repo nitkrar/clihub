@@ -73,9 +73,9 @@ class ClihubFixture(unittest.TestCase):
         """A bin holding both console scripts and the interpreter they run on,
         which is the shape pip, pipx, uv and Homebrew all produce. The shebang
         is what puts `sys.executable` in that bin, as a real install does."""
-        # A real venv, not a directory with a python symlink in it: without
-        # pyvenv.cfg the interpreter resolves the symlink and reports the base
-        # installation, so the bin holding the scripts would never be found.
+        # A real venv: without pyvenv.cfg the interpreter resolves its own
+        # symlink and reports the base installation, so the bin holding these
+        # scripts is never found.
         venv = self.base / "installed"
         subprocess.run([PYTHON, "-m", "venv", "--without-pip", str(venv)], check=True)
         bin_dir = venv / "bin"

@@ -37,8 +37,7 @@ def on_path() -> Path | None:
 def same_install(one: Path, other: Path) -> bool:
     """Whether two console scripts came from the same installation.
 
-    By directory, not by file: `ch` and `clihub` are different names for the same
-    install, so comparing the paths themselves answers no every time.
+    By directory, not by file: `ch` and `clihub` are two files in one bin.
     """
     return one.resolve().parent == other.resolve().parent
 

@@ -97,10 +97,6 @@ PyPI uploads need a one-time trusted publisher configured on pypi.org for projec
 `clihub-cli`: owner `nitkrar`, repository `clihub`, workflow `release.yml`. No API
 token is stored anywhere.
 
-The formula links `clihub` only. `ch` stays `clihub init`'s job, and because init
-resolves the target through `sys.executable` it lands in the versioned Cellar
-path, so a brew upgrade needs `clihub init --force` after it.
-
 ## Things that will bite you
 
 - **zsh does not word-split unquoted parameters.** `for c in "a b"; do ch $c; done`

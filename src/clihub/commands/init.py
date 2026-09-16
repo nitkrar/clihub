@@ -55,10 +55,9 @@ def run(argv: list[str], paths: Paths) -> int:
         )
         return 0
 
-    # pip, pipx, uv and Homebrew all put `ch` on PATH themselves, and they
-    # maintain it across upgrades. A link of our own is a second copy competing
-    # with whoever installed clihub, so it is only for the case it was written
-    # for: a checkout whose venv is not active.
+    # Whoever installed clihub owns that name and relinks it on upgrade; a
+    # second copy here would compete with them. The link is for a checkout
+    # whose venv is not active.
     reachable = install.on_path()
     if reachable is not None and not args.force and install.same_install(reachable, source):
         print(f"command    {reachable}  already on PATH")
