@@ -1,0 +1,144 @@
+# Debugging a macOS machine and its network.
+#
+# Import with:
+#     ch registry import registries/macos-debug.toml
+#
+# Every command here is read-only. The four marked (sudo) will prompt.
+#
+# On the argument rules: clihub appends "$@" only to a single simple
+# command, so anything here that is a pipeline and takes an argument
+# names "$@" itself. A pipeline without it takes no arguments at all.
+
+[net]
+description = "network debugging"
+
+[net.port]
+description = "which process is listening on a TCP port — lsof by port number"
+command = """
+lsof -nP -iTCP:"$@" -sTCP:LISTEN 2>/dev/null || { echo "nothing listening on $*"; exit 0; }
+for pid in $(lsof -nP -iTCP:"$@" -sTCP:LISTEN -t 2>/dev/null | sort -u); do
+  ps -o pid=,args= -p "$pid"
+done
+"""
+
+# lsof names the executable, not the script: a broker started by python
+# shows as `python3.12`, so the pid is joined back to `ps` for a command
+# line you would recognise.
+[net.listeners]
+description = "list every listening TCP port and socket, with the real process behind it"
+command = """
+lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2, $9}' | sort -u |
+while read -r pid addr; do
+  printf '%-24s %-7s %s\\n' "$addr" "$pid" "$(ps -o args= -p "$pid" 2>/dev/null)"
+done
+"""
+
+# Brokers, daemons and docker talk over these, and nothing above shows them.
+[net.unix]
+description = "find unix domain sockets by path — brokers, daemons, docker"
+command = """
+lsof -nP +c 0 -U 2>/dev/null | awk -v p="$@" 'NR>1 && $NF ~ p {printf "%-16s %-7s %s\\n", $1, $2, $NF}' | sort -u
+"""
+
+[net.reach]
+description = "why is this URL slow or unreachable — curl timing per phase: dns, tcp, tls"
+command = '''curl -sS -o /dev/null -w "http=%{http_code} dns=%{time_namelookup}s tcp=%{time_connect}s tls=%{time_appconnect}s ttfb=%{time_starttransfer}s total=%{time_total}s\n" "$@"'''
+
+[net.cert]
+description = "TLS ssl certificate expiry and subject for a host — openssl"
+command = 'echo | openssl s_client -connect "$1:443" -servername "$@" 2>/dev/null | openssl x509 -noout -subject -dates'
+
+[net.dns]
+description = "dns lookup the way macOS resolves it, not the way dig does"
+command = 'dscacheutil -q host -a name "$@"'
+
+[net.resolvers]
+description = "which dns servers and resolvers this machine uses, in what order"
+command = "scutil --dns"
+
+[net.primary]
+description = "which network interface wifi ethernet is actually carrying traffic"
+command = "scutil --nwi"
+
+[net.proxy]
+description = "proxy and vpn tunnel settings deciding where network traffic goes"
+command = """
+scutil --proxy
+env | grep -i _proxy || echo 'no proxy environment variables'
+ifconfig | grep -E '^(utun|ppp|ipsec)' || echo 'no tunnels up'
+"""
+
+[cpu]
+description = "processor load"
+
+[cpu.top]
+description = "what is using my cpu — heaviest processes by processor usage"
+command = "ps -A -o pid,%cpu,%mem,comm | sort -k2 -rn | head -15"
+
+[cpu.load]
+description = "cpu load average against core count — is this machine busy or slow"
+command = """
+uptime
+echo "cores: $(sysctl -n hw.ncpu)"
+"""
+
+[cpu.busy]
+description = "per-process cpu and energy power usage over one sample (sudo)"
+command = "sudo powermetrics -n 1 --samplers tasks"
+
+[mem]
+description = "memory"
+
+[mem.top]
+description = "what is using my memory ram — heaviest processes by resident size"
+command = "ps -A -o pid,%mem,rss,comm | sort -k2 -rn | head -15"
+
+[mem.pressure]
+description = "memory pressure: free ram percentage, swap pageins and pageouts"
+command = "memory_pressure | tail -5"
+
+[mem.compressor]
+description = "compressed memory and swap — what macOS compresses before swapping"
+command = "vm_stat | grep -E 'page size|compressor|wired|free'"
+
+[disk]
+description = "storage"
+
+[disk.free]
+description = "disk space and storage free on the data volume — the df line that matters on APFS"
+command = "df -h /System/Volumes/Data"
+
+[disk.hogs]
+description = "what is using my disk space — biggest directories under a path, du"
+command = 'du -sh "$@"/* 2>/dev/null | sort -h | tail -20'
+
+[disk.busy]
+description = "which process is writing to disk right now — live filesystem io (sudo)"
+command = "sudo fs_usage -w -f filesystem"
+
+[proc]
+description = "processes"
+
+[proc.info]
+description = "inspect one process by pid: parent, group, state, age, full command"
+command = 'ps -o pid,ppid,pgid,state,etime,args -p "$@"'
+
+[proc.stuck]
+description = "why is this process stuck hung frozen — five second stack sample"
+command = 'sample "$@" 5'
+
+[proc.fds]
+description = "open file descriptor count for a process — fd leak check, lsof"
+command = 'lsof -p "$@" | wc -l'
+
+[proc.sockets]
+description = "which network sockets and ports a process has open — lsof by pid"
+command = 'lsof -p "$@" -a -i'
+
+[proc.orphans]
+description = "leftover orphan processes reparented to launchd after their parent died"
+command = "ps -eo pid,ppid,pgid,etime,args | awk '$2==1 && $1!=$3'"
+
+[proc.net]
+description = "which process is using network bandwidth — per-process throughput (sudo)"
+command = "sudo nettop -P"
