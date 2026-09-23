@@ -69,7 +69,7 @@ jobs:
         with:
           repository: nitkrar/homebrew-tap
           # GITHUB_TOKEN cannot reach another repository.
-          token: ${{ secrets.TAP_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: point the formula at it

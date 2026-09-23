@@ -95,7 +95,7 @@ Two credentials, both configured once and neither stored in the repository:
 
 - PyPI trusted publishing, set up on pypi.org for project `clihub-cli`: owner
   `nitkrar`, repository `clihub`, workflow `release.yml`. There is no API token.
-- `TAP_TOKEN`, an Actions secret on this repository holding a fine-grained PAT
+- `HOMEBREW_TAP_TOKEN`, an Actions secret on this repository holding a fine-grained PAT
   with `contents: write` on `nitkrar/homebrew-tap` alone. `GITHUB_TOKEN` cannot
   reach another repository, which is the only reason this exists.
 
