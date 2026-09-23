@@ -37,6 +37,13 @@ version = {attr = "clihub.__version__"}
 "clihub.config" = ["defaults.toml"]
 "clihub._vendor" = ["*.whl", "README.md"]
 
+# Beside the package rather than inside it: a person imports the registry and
+# points an agent at the skill, and no clihub code reads either. Keeping them
+# out of the import tree is what lets them stay at the top of the repo.
+[tool.setuptools.data-files]
+"share/clihub/registries" = ["registries/macos-debug.toml"]
+"share/clihub/skills/clihub" = ["skills/clihub/SKILL.md"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["clihub*"]

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import subprocess
 import textwrap
 from pathlib import Path
 
-from .fixture import PYTHON, ClihubFixture
+from .fixture import PYTHON, ROOT, ClihubFixture
 
 
 class RegistryTests(ClihubFixture):
@@ -151,6 +152,53 @@ class RegistryTests(ClihubFixture):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "second")
 
+    def test_add_asks_for_a_missing_description_only_at_a_terminal(self) -> None:
+        """A description written now is worth more than a notice to write one later,
+        but only a person can answer: a script or an agent must not be made to wait."""
+        tool = self.write_router_tool("asked.py", "asked")
+
+        with self.subTest("a terminal is asked, and the answer is stored"):
+            result = self.run_cli_tty("registry", "add", "asked", "--", str(tool),
+                                      send="keep track of what is asked\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('description = "keep track of what is asked"',
+                          self.run_cli("registry", "show", "asked").stdout)
+
+        with self.subTest("nothing typed leaves the entry as it was before"):
+            result = self.run_cli_tty("registry", "add", "skipped", "--", str(tool),
+                                      send="\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("no description", result.stderr)
+            self.assertNotIn("description =",
+                             self.run_cli("registry", "show", "skipped").stdout)
+
+        with self.subTest("no terminal is not asked at all"):
+            result = self.run_cli("registry", "add", "piped", "--", str(tool))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("no description", result.stderr)
+            self.assertNotIn("what is this command for", result.stderr)
+
+        with self.subTest("abandoning the prompt aborts the add"):
+            parent, child = pty.openpty()
+            process = subprocess.Popen(
+                [PYTHON, "-m", "clihub", "registry", "add", "abandoned", "--", str(tool)],
+                cwd=ROOT,
+                env=self.env,
+                text=True,
+                stdin=child,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            os.close(child)
+            os.close(parent)
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 130, stderr)
+            self.assertEqual(stdout, "")
+            self.assertIn("what is this command for", stderr)
+            shown = self.run_cli("registry", "show", "abandoned")
+            self.assertEqual(shown.returncode, 127)
+            self.assertIn("unknown command", shown.stderr)
+
     def test_edit_changes_one_thing_and_leaves_the_rest(self) -> None:
         """The half `add --force` is not: force replaces an entry whole."""
         first = self.write_router_tool("e1.py", "e1")
@@ -173,6 +221,30 @@ class RegistryTests(ClihubFixture):
         with self.subTest("an empty description clears it"):
             self.run_cli("registry", "edit", "llm.llama", "--describe", "")
             self.assertNotIn("changed", self.run_cli("registry", "show", "llm.llama").stdout)
+
+        with self.subTest("a multiline description is refused like add refuses it"):
+            result = self.run_cli("registry", "edit", "llm.llama",
+                                  "--describe", "line one\nline two")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("single line", result.stderr)
+
+    def test_edit_applies_requested_changes_atomically(self) -> None:
+        """A later refusal must leave earlier requested edits unapplied too."""
+        tool = self.write_router_tool("atomic.py", "atomic")
+        self.run_cli("registry", "add", "demo","--describe", "one", "--", str(tool))
+        self.run_cli("registry", "add", "taken","--describe", "two", "--", str(tool))
+        before = self.run_cli("registry", "show", "demo")
+        self.assertEqual(before.returncode, 0, before.stderr)
+
+        result = self.run_cli("registry", "edit", "demo", "--describe", "changed",
+                              "--name", "taken")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("already registered", result.stderr)
+        self.assertEqual(result.stdout, "")
+
+        after = self.run_cli("registry", "show", "demo")
+        self.assertEqual(after.returncode, 0, after.stderr)
+        self.assertEqual(after.stdout, before.stdout)
 
     def test_rename_moves_a_name_but_never_between_groups(self) -> None:
         tool = self.write_router_tool("r.py", "r")

@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import unittest
 import uuid
 from pathlib import Path
 
@@ -271,6 +272,73 @@ class SetupTests(ClihubFixture):
         shutil.rmtree(old.parent.parent)
 
         self.assertTrue(found.is_file(), f"{found} did not survive the upgrade")
+
+    def test_init_offers_the_shipped_skill_rather_than_installing_it(self) -> None:
+        """Writing outside `~/.clihub` is the user's decision, as editing a shell
+        rc is: asked at a terminal, never taken on init's own initiative."""
+        skill_dir = self.base / "agent-skills"
+        installed = skill_dir / "clihub" / "SKILL.md"
+
+        with self.subTest("no terminal is not asked, and nothing is written"):
+            result = self.run_cli("init", "--no-link", "--skill-dir", str(skill_dir))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(installed.exists())
+
+        with self.subTest("declining says where the skill is instead"):
+            result = self.run_cli_tty("init", "--no-link", "--skill-dir", str(skill_dir),
+                                      send="n\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(installed.exists())
+            self.assertIn("SKILL.md", result.stdout + result.stderr)
+
+        with self.subTest("accepting installs the skill that ships"):
+            result = self.run_cli_tty("init", "--no-link", "--skill-dir", str(skill_dir),
+                                      send="y\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(installed.exists())
+            self.assertIn("name: clihub", installed.read_text(encoding="utf-8"))
+
+        with self.subTest("--no-skill is not asked even at a terminal"):
+            shutil.rmtree(skill_dir)
+            result = self.run_cli_tty("init", "--no-link", "--no-skill",
+                                      "--skill-dir", str(skill_dir), send="y\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(installed.exists())
+
+    def test_init_asks_where_the_skill_goes_only_when_not_told(self) -> None:
+        """`--skill-dir` is an answer given in advance; asking again would be
+        asking a question that has been answered."""
+        source = Path(ROOT) / "skills" / "clihub" / "SKILL.md"
+
+        with self.subTest("not told: asked, and the typed path is used"):
+            chosen = self.base / "typed"
+            result = self.run_cli_tty("init", "--no-link", send=f"y\n{chosen}\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((chosen / "clihub" / "SKILL.md").read_bytes(),
+                             source.read_bytes())
+
+        with self.subTest("nothing typed takes the default under HOME"):
+            result = self.run_cli_tty("init", "--no-link", send="y\n\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            default = Path(self.env["HOME"]) / ".claude" / "skills" / "clihub" / "SKILL.md"
+            self.assertTrue(default.is_file(), result.stdout + result.stderr)
+
+        with self.subTest("told where: not asked a second time"):
+            told = self.base / "told"
+            result = self.run_cli_tty("init", "--no-link", "--skill-dir", str(told),
+                                      send="y\nn\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((told / "clihub" / "SKILL.md").is_file())
+            self.assertNotIn("where?", result.stdout + result.stderr)
+
+    @unittest.skipUnless(sys.platform == "darwin", "the shipped registry is macOS-only")
+    def test_init_offers_the_macos_registry_where_it_can_run(self) -> None:
+        result = self.run_cli_tty("init", "--no-link", "--no-skill",
+                                  "--skill-dir", str(self.base / "unused"), send="y\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listed = self.run_cli("list").stdout
+        self.assertIn("net.listeners", listed)
+        self.assertIn("cpu.top", listed)
 
     def test_clihub_writes_only_inside_its_configured_roots(self) -> None:
         """Everything lands under the one root, and the disposable parts in

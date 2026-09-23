@@ -20,7 +20,7 @@ from .. import describe
 from .. import registry as store
 from ..errors import BuiltinError, RegistryEntryError, UnknownCommandError, UsageError
 from ..paths import Paths
-from ..render import render_rows, render_text
+from ..render import ask, render_rows, render_text
 
 # What `ch --help` prints for this command. Separate from __doc__, which is
 # about the module: different readers, different words.
@@ -118,10 +118,19 @@ def _run_add(args, paths: Paths) -> int:
     _warn_if_environment_specific(name, target)
     full_prefix = [target, *args.prefix[1:]]
 
-    store.add(paths, name, full_prefix, description=args.describe or None,
+    description = args.describe
+    if description is None:
+        if sys.stdin.isatty():
+            description = _ask_what_it_is_for(name)
+            if description is None:
+                return 130
+        else:
+            description = ""
+
+    store.add(paths, name, full_prefix, description=description or None,
               force=args.force)
-    if args.describe:
-        _warn_if_copied_from_help(name, args.describe, shlex.join(full_prefix), paths)
+    if description:
+        _warn_if_copied_from_help(name, description, shlex.join(full_prefix), paths)
     else:
         sys.stderr.write(
             f"{name}: no description. Write one with "
@@ -130,11 +139,22 @@ def _run_add(args, paths: Paths) -> int:
     return 0
 
 
+def _ask_what_it_is_for(name: str) -> str | None:
+    """Ask for the description when `--describe` was omitted.
+
+    A blank answer skips the description; an abandoned prompt aborts the add.
+    The wording asks for a purpose rather than a summary because descriptions
+    that enumerate subcommands mislead discovery (`findings.md` §1).
+    """
+    return ask(f"{name}: what is this command for? (enter to skip) ")
+
+
 def _warn_if_copied_from_help(name: str, description: str, script: str, paths) -> None:
     """Hint when a description looks lifted from the tool's own help.
 
-    Descriptions that enumerate subcommands measurably mislead small models: they read
-    the verbs as tool names. Advisory only — the description is stored either way.
+    Descriptions that enumerate subcommands mislead discovery (`findings.md` §1):
+    they read the verbs as tool names. Advisory only — the description is stored
+    either way.
     """
     settings = load_settings(paths.config_file)
     if not settings.overlap_check:
@@ -177,6 +197,10 @@ def _run_export(args, paths: Paths) -> int:
 
 
 def _run_import(args, paths: Paths) -> int:
+    return import_file(paths, Path(args.path), force=args.force)
+
+
+def import_file(paths: Paths, source: Path, *, force: bool) -> int:
     """Merge another registry.toml into this one. Three problems, three answers:
 
         will not parse       refused whole; nothing is written
@@ -186,7 +210,7 @@ def _run_import(args, paths: Paths) -> int:
     A key that merely disagrees is a decision, not a fault: the keys that agree go
     in and the ones that do not are listed for --force.
     """
-    source = Path(args.path).expanduser().resolve()
+    source = source.expanduser().resolve()
     if source.is_dir():
         # The mirror of export, so `ch rg export ~/backup` round-trips.
         source = source / paths.registry_file.name
@@ -211,7 +235,7 @@ def _run_import(args, paths: Paths) -> int:
                    if i.severity == store.BROKEN and i.kind == store.REACHABILITY]
     skip = frozenset(issue.namespace for issue in illegal)
 
-    result = store.merge_file(paths, source, force=args.force, skip=skip)
+    result = store.merge_file(paths, source, force=force, skip=skip)
 
     counts = [f"{len(result.added)} added"]
     if result.replaced:
@@ -229,7 +253,7 @@ def _run_import(args, paths: Paths) -> int:
         render_text("\nleft behind, wrong on any machine")
         render_rows([(f"  {issue.namespace}", issue.problem) for issue in illegal])
 
-    if result.conflicts and not args.force:
+    if result.conflicts and not force:
         render_text("\nkept yours; re-run with --force to take theirs")
         for label, mine, theirs in result.conflicts:
             render_text(f"  {label}\n    yours:  {mine}\n    theirs: {theirs}")
@@ -258,21 +282,19 @@ def _run_edit(args, paths: Paths) -> int:
             "nothing to change: give --name, --describe, or -- <path> [fixed-args...]"
         )
 
-    loaded = store.load(paths)
-    if args.name not in loaded.by_name() and loaded.namespace(args.name) is None:
-        raise UnknownCommandError(args.name)
-
     current = args.name
+    prefix = None
     if args.prefix:
         target = _validated_target(current, args.prefix)
         _warn_if_environment_specific(current, target)
-        store.set_command(paths, current, [target, *args.prefix[1:]])
+        prefix = [target, *args.prefix[1:]]
+    store.edit(paths, current, rename=args.rename, prefix=prefix,
+               description=args.describe or None, set_description=args.describe is not None)
+    if args.prefix:
         print(f"command     {current} -> {target}")
     if args.describe is not None:
-        store.set_description(paths, current, args.describe or None)
         print(f"description {current} -> {args.describe or '(cleared)'}")
     if args.rename is not None:
-        store.rename(paths, current, args.rename)
         print(f"renamed     {current} -> {args.rename}")
     return 0
 
@@ -417,4 +439,3 @@ def _warn_if_environment_specific(name: str, path_value: str) -> None:
         f"{name}: only exists in {reason} ({winner}),\n"
         f"  so `ch {name}` will fail anywhere else. Register the full path to pin it.\n"
     )
-

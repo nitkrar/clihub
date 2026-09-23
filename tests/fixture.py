@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import pty
 import subprocess
 import sys
 import tempfile
@@ -55,8 +56,34 @@ class ClihubFixture(unittest.TestCase):
             env=self.env,
             text=True,
             capture_output=True,
+            # Inherited stdin is a terminal when the suite is run by hand and a pipe
+            # under CI, which decides whether `add` prompts. Pinned so it cannot.
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
         )
+
+    def run_cli_tty(
+        self, *args: str, send: str = "", timeout: float = 5.0
+    ) -> subprocess.CompletedProcess[str]:
+        """Run the CLI with a terminal on stdin, for the prompts that need one."""
+        parent, child = pty.openpty()
+        process = subprocess.Popen(
+            [PYTHON, "-m", "clihub", *args],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdin=child,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        os.close(child)
+        try:
+            if send:
+                os.write(parent, send.encode())
+            stdout, stderr = process.communicate(timeout=timeout)
+        finally:
+            os.close(parent)
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
     def start_cli(self, *args: str) -> subprocess.Popen[str]:
         return subprocess.Popen(

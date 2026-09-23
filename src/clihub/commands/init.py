@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 from pathlib import Path
 
-from .. import completion, config, install
+from .. import completion, config, install, render
 from ..config import load as load_settings
 from ..errors import BuiltinError
 from ..paths import Paths
@@ -21,6 +22,7 @@ SUMMARY = "create the directories, put ch on PATH"
 ARGS = ""
 
 DEFAULT_LINK_DIR = Path("~/.local/bin")
+DEFAULT_SKILL_DIR = Path("~/.claude/skills")
 
 
 def run(argv: list[str], paths: Paths) -> int:
@@ -31,6 +33,10 @@ def run(argv: list[str], paths: Paths) -> int:
     parser.add_argument(
         "--completions", action=argparse.BooleanOptionalAction, default=None
     )
+    # No default: whether it was given is the question, since being told where
+    # is what replaces asking. The default is applied where it is used.
+    parser.add_argument("--skill-dir")
+    parser.add_argument("--no-skill", action="store_true")
     args = parser.parse_args(argv[2:])
 
     for directory in (paths.root, paths.log_root):
@@ -43,7 +49,13 @@ def run(argv: list[str], paths: Paths) -> int:
     print(f"log        {paths.log_root.name}/       safe to delete")
 
     _install_completions(paths, choice=args.completions)
+    status = _link_command(args)
+    _offer_skill(args)
+    _offer_registry(paths)
+    return status
 
+
+def _link_command(args) -> int:
     if args.no_link:
         return 0
 
@@ -75,6 +87,97 @@ def run(argv: list[str], paths: Paths) -> int:
             f"  export PATH=\"{link_dir}:$PATH\"\n"
         )
     return 0
+
+
+def _offer_skill(args) -> None:
+    """Offer the agent skill that ships with clihub, and say where it is either way.
+
+    Declining still prints the path: the file is no use to anyone who cannot
+    find it, and that is the whole reason this offer exists.
+    """
+    shipped = install.shipped_dir("skills")
+    if shipped is None:
+        return
+    source = shipped / "clihub" / "SKILL.md"
+    if not source.is_file():
+        return
+    if args.no_skill:
+        print(f"skill      {source}")
+        return
+
+    told = args.skill_dir is not None
+    target_dir = Path(args.skill_dir or DEFAULT_SKILL_DIR).expanduser() / "clihub"
+    target = target_dir / "SKILL.md"
+    if target.is_file() and target.read_bytes() == source.read_bytes():
+        print(f"skill      {target}  already installed")
+        return
+
+    question = (f"\ninstall the clihub agent skill to {target_dir}?" if told
+                else "\ninstall the clihub agent skill?")
+    if not render.confirm(question):
+        print(f"skill      {source}")
+        return
+
+    if not told:
+        answer = render.ask(f"where? [{DEFAULT_SKILL_DIR}] ")
+        if answer is None:
+            # Abandoned rather than answered: installing somewhere they did not
+            # choose is worse than not installing.
+            print(f"skill      {source}")
+            return
+        if answer:
+            target_dir = Path(answer).expanduser() / "clihub"
+            target = target_dir / "SKILL.md"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    print(f"skill      {target}")
+
+
+def _offer_registry(paths: Paths) -> None:
+    """Offer a shipped registry, where this machine could run what is in it.
+
+    Only the registries named for this platform: importing commands built on
+    `scutil` and APFS paths onto Linux registers fifty entries that cannot run
+    and leaves `doctor` failing on a machine nobody has touched yet.
+    """
+    shipped = install.shipped_dir("registries")
+    if shipped is None:
+        return
+    for source in sorted(shipped.glob("*.toml")):
+        if not source.stem.startswith(_platform_prefix()):
+            continue
+        entries = _count_commands(source)
+        if not render.confirm(
+            f"\nimport {entries} {source.stem} commands into your registry?"
+        ):
+            print(f"registry   {source}  import it with 'ch registry import'")
+            continue
+        from . import registry as registry_command
+
+        registry_command.import_file(paths, source, force=False)
+
+
+def _platform_prefix() -> str:
+    return {"darwin": "macos", "linux": "linux"}.get(sys.platform, sys.platform)
+
+
+def _count_commands(source: Path) -> int:
+    """How many runnable commands the shipped registry defines."""
+    import tomllib
+
+    def walk(table: dict) -> int:
+        total = 0
+        for value in table.values():
+            if isinstance(value, dict):
+                total += ("command" in value) + walk(value)
+        return total
+
+    try:
+        with source.open("rb") as handle:
+            return walk(tomllib.load(handle))
+    except (OSError, tomllib.TOMLDecodeError):
+        return 0
 
 
 def _write_commented_config(paths: Paths) -> bool:

@@ -296,10 +296,7 @@ registry.
 ## 6. Discovery
 
 `list` renders **flat**: one row per tool, no grouping. Namespaces are a data model,
-not a rendering level — a grouped listing measured worse for tool selection than a
-flat one on every model tested. Tool names are dotted regardless, which costs nothing
-measured, so grouping could later become a rendering option without renaming anything.
-See `findings.md` §2 and §3.
+not a rendering level. Tool names are dotted regardless. See `findings.md` §2 and §3.
 
 Discovery commands:
 - `ch list` prints a flat list of discoverable names with descriptions when available.
@@ -316,8 +313,9 @@ Discovery commands:
 - typo matching on names only, for single-word queries.
 
 Description handling:
-- A description comes from the registry and nowhere else. `registry add --describe`
-  and `registry edit --describe` write it; nothing else produces one.
+- A description comes from the registry and nowhere else. `registry add --describe`,
+  the terminal prompt when `registry add` omits `--describe`, and
+  `registry edit --describe` write it; nothing else produces one.
 - `list` and `find` read it directly, so they run no tool and cannot fail. That is
   why a malformed entry no longer takes the whole listing down with it.
 - `timeout_seconds` bounds the `--help` probe behind the overlap warning.
@@ -338,8 +336,8 @@ Description handling:
 - The rc line is matched by a trailing `# clihub completions` marker, so reinstalling
   never duplicates it and a moved config directory still updates cleanly.
 - The script is a file clihub owns and the rc gets one `source` line, so
-  regenerating completions never touches the rc again. Sourcing a file costs
-  +2.5 ms against `eval "$(ch ...)"` at +63.9 ms, which starts Python per shell.
+  regenerating completions never touches the rc again. Sourcing a file keeps
+  completion in the shell rather than starting Python per shell.
 - The generated script runs `compinit` itself if `compdef` is undefined, since a
   plain rc never calls it and the registration would silently fail.
 - `ch init` installs completion only when asked — `--completions`, or
@@ -347,10 +345,8 @@ Description handling:
   config is not something init should do on its own initiative.
 - `completions_enabled` is read by the generated script itself, with a grep of the
   config, so turning completion off takes effect on the next tab without
-  reinstalling. Candidates are baked in rather than queried, because a `ch`
-  invocation is 65 ms and that is too long to sit under a tab press — the cost is
-  that the list goes stale when a tool is added, until completion is reinstalled.
-- A later optional contract may add `--complete <partial>` passthrough for tools.
+  reinstalling. Candidates are baked in rather than queried, so a tool added
+  after installation does not appear until completion is reinstalled.
 
 ---
 
@@ -362,25 +358,24 @@ or broken.
 Rules:
 - `ch init` creates `~/.clihub` and its `log/` subdirectory, writes `config.toml`
   with every key commented out, and symlinks `ch` into `--link-dir`
-  (default `~/.local/bin`). It is the one command run by full path, because its
-  purpose is that `ch` is not yet on PATH. Idempotent; it refuses to replace a
-  foreign `ch` without `--force`. It does not link when `ch` already resolves to
-  the same installation, which pip, pipx, uv and Homebrew all arrange and
-  maintain; the link is for a checkout whose venv is not active. Where it does
-  link under Homebrew, `Cellar/<formula>/<version>` is rewritten to
-  `opt/<formula>`, the versioned directory being deleted on the next upgrade.
+  (default `~/.local/bin`). On a terminal, it may also offer the shipped
+  `clihub` skill and a platform-matching shipped registry. It is the one command
+  run by full path, because its purpose is that `ch` is not yet on PATH.
+  Idempotent; it refuses to replace a foreign `ch` without `--force`. It does
+  not link when `ch` already resolves to the same installation, which pip, pipx,
+  uv and Homebrew all arrange and maintain; the link is for a checkout whose
+  venv is not active. Where it does link under Homebrew,
+  `Cellar/<formula>/<version>` is rewritten to `opt/<formula>`, the versioned
+  directory being deleted on the next upgrade.
 - Whether the `ch` on PATH is this same install is decided in one place,
   `install.same_install`, by directory: `ch` and `clihub` are two files in one
   bin.
 - `--` marks the start of the stored command prefix. argparse handles the separator
-  natively, which is why `registry add` no longer walks its tokens by hand — and it
-  is what sets `requires-python`. Below 3.12 the same command fails with
-  `unrecognized arguments: -- /bin/echo`; the behaviour arrived in 3.12, not 3.11
-  as this document claimed until CI ran it. `ch list` and dispatch work on older
-  versions, so the floor is invisible until you register something — which is why
-  the wrong floor shipped. Lowering it means hand-rolling the separator again.
+  natively, which is why `registry add` no longer walks its tokens by hand — and
+  why `requires-python` is `>=3.12`. Lowering the floor means hand-rolling the
+  separator again.
 - Commands are grouped by what they touch. `registry` edits `registry.toml`;
-  `tools` holds setup that is not a registry edit, currently only `completion`.
+  `tools` holds setup that is not a registry edit, and `completion` lives there.
   `doctor` is top level because it is what you reach for when something is
   wrong, and where clihub's own error messages send you.
 - `registry` rather than `tools` for the edit verbs: `registry add llm` creates a
@@ -393,7 +388,9 @@ Rules:
   by the same `registry.syntax_problem` doctor uses. A target that is merely absent
   is reported and still recorded — a bare name resolves at dispatch, and a file may
   be installed later — and `doctor` counts that as broken.
-- `registry add --describe` is how a description gets written; there is no other source.
+- `registry add --describe`, the terminal prompt when `registry add` omits
+  `--describe`, and `registry edit --describe` are how a description gets written;
+  there is no other source.
 - `registry remove <ns>.<tool>` removes only that tool.
 - `registry remove <ns>` removes the namespace's own `command`; the namespace remains if named
   tools still exist.
@@ -446,6 +443,7 @@ ch list [<ns>] [--json]
 ch find <terms> [--json]
 ch help <name>
 ch init [--link-dir DIR] [--no-link] [--force] [--completions|--no-completions]
+        [--skill-dir DIR] [--no-skill]
 ch registry add <name> [--describe "..."] [--force] -- <path> [fixed-args...]
 ch registry remove <name>
 ch registry show <name>
@@ -479,11 +477,11 @@ Notes:
   unchanged. clihub never invents a code for a command that ran.
 - **The code for a path target depends on which `sh` is installed.** Under bash
   as `sh`, `-e` collapses a missing path and a non-executable one to 1; under dash
-  they are the conventional 127 and 126. Bare names keep 127 either way. CI runs
-  both, and the test accepts both, because clihub passes the shell's answer through
-  rather than having an answer of its own. The flag is kept because stopping a multi-line
-  command at its first failure matters more than the distinction, and `ch doctor`
-  reports both conditions by name before they are ever run.
+  they are the conventional 127 and 126. Bare names keep 127 either way. clihub
+  passes the shell's answer through rather than having an answer of its own. The
+  flag is kept because stopping a multi-line command at its first failure matters
+  more than the distinction, and `ch doctor` reports both conditions by name
+  before they are ever run.
 - 126 therefore does not mean "found but not executable". It means the entry could
   not be turned into a command line at all, which is decided before any shell runs.
 - Once a child runs, numeric collisions between tool exit codes and clihub exit codes

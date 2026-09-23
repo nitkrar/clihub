@@ -175,7 +175,7 @@ def syntax_problem(name: str, script: str) -> str | None:
     syntax error the stored command does not have on its own.
 
     `sh -n` reads without executing, so this asks the shell instead of guessing
-    which endings may be appended to -- a guess that was wrong twice already.
+    whether the assembled body still parses.
     """
     if not _could_fail_to_parse(script):
         return None

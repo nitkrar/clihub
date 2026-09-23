@@ -168,11 +168,8 @@ _ZSH = """_clihub_complete() {{
   _describe 'command' _clihub_words
 }}
 
-# compdef only exists once compinit has run. An rc that never calls it -- which is
-# any plain ~/.zshrc, no framework -- left this line failing with "command not
-# found", nothing registered, and zsh quietly falling back to filename completion:
-# `ch l<TAB>` offered the directory ~/.local. It looked like broken completion
-# rather than absent completion, which is why it went unnoticed.
+# compdef only exists once compinit has run. Load it here so completion
+# registration works in a plain rc as well as under a shell framework.
 if ! whence compdef >/dev/null 2>&1; then
   autoload -Uz compinit && compinit -u
 fi

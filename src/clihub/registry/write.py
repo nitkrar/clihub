@@ -115,8 +115,70 @@ def merge_file(
     return MergeResult(added, replaced, conflicts, unchanged)
 
 
+def edit(
+    paths: Paths,
+    name: str,
+    *,
+    rename: str | None = None,
+    prefix: list[str] | None = None,
+    description: str | None = None,
+    set_description: bool = False,
+) -> None:
+    """Apply one edit request as one locked read/validate/write transaction."""
+    namespace, tool = split_name(name)
+    with _locked(paths.registry_file):
+        document = _read_for_write(paths)
+        group = _table(document, namespace)
+        if group is None:
+            raise UnknownCommandError(name)
+        target = group if tool is None else group.get(tool)
+        if target is None:
+            raise UnknownCommandError(name)
+        if prefix is not None and "command" not in target:
+            raise UnknownCommandError(name)
+        if set_description and description is not None and "\n" in description:
+            raise BuiltinError("a description must be a single line")
+
+        new_ns = namespace
+        new_tool = tool
+        if rename is not None:
+            new_ns, new_tool = ensure_addable(rename)
+            if (tool is None) != (new_tool is None):
+                raise BuiltinError(
+                    f"cannot rename {name} to {rename}: a group and a command are different shapes"
+                )
+            if tool is not None and namespace != new_ns:
+                raise BuiltinError(
+                    f"cannot rename {name} to {rename}: that moves it between groups; "
+                    f"use remove and add"
+                )
+            if tool is None:
+                if new_ns in document:
+                    raise BuiltinError(f"already registered: {rename}")
+            elif new_tool in group:
+                raise BuiltinError(f"already registered: {rename}")
+
+        if prefix is not None:
+            target["command"] = shlex.join(prefix)
+        if set_description:
+            if description:
+                target["description"] = description
+            elif "description" in target:
+                del target["description"]
+        if rename is not None:
+            if tool is None:
+                document[new_ns] = group
+                del document[namespace]
+            else:
+                group[new_tool] = group[tool]
+                del group[tool]
+        _write(paths, document)
+
+
 def set_description(paths: Paths, name: str, description: str | None) -> None:
     namespace, tool = split_name(name)
+    if description is not None and "\n" in description:
+        raise BuiltinError("a description must be a single line")
     with _locked(paths.registry_file):
         document = _read_for_write(paths)
         group = _table(document, namespace)

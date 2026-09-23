@@ -40,6 +40,10 @@ not on your PATH.
 Add `--completions` to install shell completion at the same time, or run
 `ch tools completion` later.
 
+On a terminal, `ch init` can also offer the shipped `clihub` skill and a
+platform-matching shipped registry. Use `--skill-dir DIR` or `--no-skill` to
+answer the skill offer up front.
+
 Python 3.12+, no dependencies. It also runs straight from a checkout:
 
 ```sh
@@ -156,17 +160,14 @@ with the shipped defaults, and `ch doctor` tells you the whole file is inert.
 ## For agents
 
 An agent has been trained on `git` and `docker`. It has not been trained on the
-tools you wrote, and cannot guess they exist. That is what the registry is for, and
-the integration is one paragraph — put this in your `AGENTS.md` or `CLAUDE.md`:
+tools you wrote, and cannot guess they exist. That is what the registry is for.
 
-> Local tools are registered with `ch`. Run `ch list --json` to see what is
-> available, or `ch find <what you want to do> --json` to search by intent. Run one
-> with `ch <name> [args...]`; arguments are passed through untouched. Check this
-> before concluding a capability is missing.
+`skills/clihub/SKILL.md` is the integration: point your agent at it, or copy it
+where your agent looks for skills. There is no MCP server and no per-agent install
+step — an agent already has a shell, and `ch` is a command.
 
-`ch list`, `ch find` and `ch tools stats` take `--json`; `ch rg show <name>` emits
-TOML. There is no MCP server and no per-agent install step: an agent already has a
-shell, and `ch` is a command.
+For machine-readable discovery, `ch list`, `ch find`, and `ch tools stats` take
+`--json`; `ch registry show <name>` prints TOML.
 
 ## When something is wrong
 

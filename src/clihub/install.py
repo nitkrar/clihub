@@ -42,6 +42,23 @@ def same_install(one: Path, other: Path) -> bool:
     return one.resolve().parent == other.resolve().parent
 
 
+def shipped_dir(name: str) -> Path | None:
+    """A directory of files that ship beside clihub, or None where none did.
+
+    Two layouts, because both are ordinary installs: a wheel puts these under
+    `<prefix>/share/clihub`, and a checkout leaves them at the top of the repo.
+    They hold no code, which is why they are not in the import tree and cannot
+    be found with `importlib.resources`.
+    """
+    for candidate in (
+        Path(sys.prefix) / "share" / "clihub" / name,
+        Path(__file__).resolve().parents[2] / name,
+    ):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _outlives_upgrades(bin_dir: Path) -> Path:
     """The same directory named so that a Homebrew upgrade cannot invalidate it.
 

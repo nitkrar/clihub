@@ -51,6 +51,7 @@ from .read import (
 from .write import (
     MergeResult,
     add,
+    edit,
     merge_file,
     remove,
     rename,
@@ -72,6 +73,7 @@ __all__ = [
     "Registry",
     "add",
     "doctor_issues",
+    "edit",
     "ensure_addable",
     "environment_specific",
     "is_grouping_namespace",

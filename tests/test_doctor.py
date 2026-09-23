@@ -282,6 +282,30 @@ class DoctorTests(ClihubFixture):
         with self.subTest("but dispatch still works, on the shipped defaults"):
             self.assertEqual(self.run_cli("fine").returncode, 0)
 
+    def test_a_config_with_invalid_value_types_is_ignored_and_reported(self) -> None:
+        """Type validation is part of reading the config: a parseable file whose
+        values do not fit the settings shape is still inert in practice."""
+        tool = self.write_router_tool("cfg.py", "cfg")
+        self.config_file.write_text(
+            '[describe]\ntimeout_seconds = "oops"\n',
+            encoding="utf-8",
+        )
+
+        with self.subTest("doctor reports it as broken"):
+            result = self.run_cli("doctor")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("config", result.stdout)
+            self.assertIn("ignored", result.stdout)
+            self.assertIn("timeout_seconds", result.stdout)
+
+        with self.subTest("settings consumers fall back to the shipped defaults"):
+            result = self.run_cli("registry", "add", "cfg", "--describe", "format code",
+                                  "--", str(tool))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            shown = self.run_cli("registry", "show", "cfg")
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertIn('description = "format code"', shown.stdout)
+
     def test_a_bare_name_only_an_environment_provides_is_called_out(self) -> None:
         """A name only a venv provides works here and nowhere else, so adding it
         warns. One PATH hit, not two -- the dangerous shape is that no binary wins
