@@ -38,3 +38,67 @@ jobs:
           }
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  homebrew:
+    name: point the tap at the published sdist
+    # The formula names an sdist, which exists only once PyPI has it.
+    needs: pypi
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: find the sdist PyPI is serving
+        id: sdist
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # The JSON API lags the upload, and the URL's content-hash path
+          # cannot be constructed, so there is nothing to fall back to.
+          for _ in $(seq 1 30); do
+            curl -sf "https://pypi.org/pypi/clihub-cli/$version/json" -o payload.json && break
+            sleep 10
+          done
+          test -s payload.json || { echo "pypi never served $version" >&2; exit 1; }
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          files = json.load(open("payload.json"))["urls"]
+          sdist = next(f for f in files if f["packagetype"] == "sdist")
+          print(f"url={sdist['url']}")
+          print(f"sha256={sdist['digests']['sha256']}")
+          PY
+
+      - uses: actions/checkout@v4
+        with:
+          repository: nitkrar/homebrew-tap
+          # GITHUB_TOKEN cannot reach another repository.
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: point the formula at it
+        working-directory: tap
+        env:
+          SDIST_URL: ${{ steps.sdist.outputs.url }}
+          SDIST_SHA256: ${{ steps.sdist.outputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+
+          formula = pathlib.Path("Formula/clihub.rb")
+          body = formula.read_text(encoding="utf-8")
+          body, urls = re.subn(r'^(\s*)url ".*"$',
+                               lambda m: f'{m[1]}url "{os.environ["SDIST_URL"]}"',
+                               body, count=1, flags=re.M)
+          body, hashes = re.subn(r'^(\s*)sha256 ".*"$',
+                                 lambda m: f'{m[1]}sha256 "{os.environ["SDIST_SHA256"]}"',
+                                 body, count=1, flags=re.M)
+          if (urls, hashes) != (1, 1):
+              raise SystemExit(f"replaced {urls} url and {hashes} sha256, wanted one each")
+          formula.write_text(body, encoding="utf-8")
+          PY
+
+      - name: commit the bump
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && { echo "formula already points there"; exit 0; }
+          git commit -am "clihub ${GITHUB_REF_NAME#v}"
+          git push

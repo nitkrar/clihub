@@ -179,22 +179,13 @@ class RegistryTests(ClihubFixture):
             self.assertNotIn("what is this command for", result.stderr)
 
         with self.subTest("abandoning the prompt aborts the add"):
-            parent, child = pty.openpty()
-            process = subprocess.Popen(
-                [PYTHON, "-m", "clihub", "registry", "add", "abandoned", "--", str(tool)],
-                cwd=ROOT,
-                env=self.env,
-                text=True,
-                stdin=child,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            os.close(child)
-            os.close(parent)
-            stdout, stderr = process.communicate(timeout=5)
-            self.assertEqual(process.returncode, 130, stderr)
-            self.assertEqual(stdout, "")
-            self.assertIn("what is this command for", stderr)
+            # EOT waits in the buffer; closing the terminal races the child,
+            # which then sees no terminal and never asks.
+            result = self.run_cli_tty("registry", "add", "abandoned", "--", str(tool),
+                                      send="\x04")
+            self.assertEqual(result.returncode, 130, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("what is this command for", result.stderr)
             shown = self.run_cli("registry", "show", "abandoned")
             self.assertEqual(shown.returncode, 127)
             self.assertIn("unknown command", shown.stderr)

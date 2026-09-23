@@ -79,23 +79,25 @@ The version lives in `src/clihub/__init__.py` and pyproject reads it. On PyPI th
 distribution is `clihub-cli`, because `clihub` there belongs to an unrelated
 project; the import package and both commands are unaffected.
 
-1. Bump `__version__`, commit.
-2. `git tag -a vX.Y.Z -m "clihub X.Y.Z" && git push origin main --tags`. The
-   release workflow runs the tests, refuses a tag that disagrees with
-   `__version__`, and publishes to PyPI.
-3. Point the formula in `nitkrar/homebrew-tap` at the new tag:
+Tagging is the whole release. Everything after it is the workflow's.
 
-```sh
-curl -sL -o /tmp/c.tar.gz \
-  https://github.com/nitkrar/clihub/archive/refs/tags/vX.Y.Z.tar.gz
-shasum -a 256 /tmp/c.tar.gz
-```
+1. Bump `__version__`, commit, and push to `main`. Wait for the matrix: it is the
+   only thing that runs the suite on Linux and on 3.13 and 3.14.
+2. `git tag -a vX.Y.Z -m "clihub X.Y.Z" && git push origin --tags`.
 
-   Edit `url` and `sha256` in `Formula/clihub.rb`, commit, push.
+`release.yml` then runs the tests, refuses a tag that disagrees with
+`__version__`, publishes to PyPI, and points `nitkrar/homebrew-tap` at the sdist
+PyPI is serving. The formula names that sdist rather than a GitHub tag archive,
+so brew can only ever offer a version pip already has, and a release that failed
+to publish leaves the tap alone.
 
-PyPI uploads need a one-time trusted publisher configured on pypi.org for project
-`clihub-cli`: owner `nitkrar`, repository `clihub`, workflow `release.yml`. No API
-token is stored anywhere.
+Two credentials, both configured once and neither stored in the repository:
+
+- PyPI trusted publishing, set up on pypi.org for project `clihub-cli`: owner
+  `nitkrar`, repository `clihub`, workflow `release.yml`. There is no API token.
+- `TAP_TOKEN`, an Actions secret on this repository holding a fine-grained PAT
+  with `contents: write` on `nitkrar/homebrew-tap` alone. `GITHUB_TOKEN` cannot
+  reach another repository, which is the only reason this exists.
 
 ## Things that will bite you
 
