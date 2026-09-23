@@ -3,15 +3,24 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Rehearses the tap against a tag already released.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: an existing tag, e.g. v1.0.4
+        required: true
 
 jobs:
   pypi:
     name: publish clihub-cli to PyPI
+    # A hand-run must never publish: the tag it names is already out.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       # Trusted publishing: PyPI verifies this workflow's OIDC identity, so no
       # API token exists to leak or rotate. Configured on pypi.org, not here.
       id-token: write
+      contents: write        # the release this tag becomes
 
     steps:
       - uses: actions/checkout@v4
@@ -39,17 +48,28 @@ jobs:
 
       - uses: pypa/gh-action-pypi-publish@release/v1
 
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --generate-notes --title "$TAG"
+
   homebrew:
     name: point the tap at the published sdist
     # The formula names an sdist, which exists only once PyPI has it.
     needs: pypi
+    # `needs` alone would skip this whenever pypi is skipped.
+    if: always() && (needs.pypi.result == 'success'
+        || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     steps:
       - name: find the sdist PyPI is serving
         id: sdist
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           # The JSON API lags the upload, and the URL's content-hash path
           # cannot be constructed, so there is nothing to fall back to.
           for _ in $(seq 1 30); do
@@ -94,11 +114,16 @@ jobs:
           formula.write_text(body, encoding="utf-8")
           PY
 
-      - name: commit the bump
+      - name: commit, once the diff is only the release
         working-directory: tap
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          git diff --quiet && { echo "formula already points there"; exit 0; }
+          # A wider diff is a rewrite bug, and would break `brew install`.
+          git diff --stat
+          test "$(git diff --numstat)" = "$(printf '2\t2\tFormula/clihub.rb')"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git diff --quiet && { echo "formula already points there"; exit 0; }
-          git commit -am "clihub ${GITHUB_REF_NAME#v}"
+          git commit -am "clihub ${TAG#v}"
           git push

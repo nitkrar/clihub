@@ -86,10 +86,12 @@ Tagging is the whole release. Everything after it is the workflow's.
 2. `git tag -a vX.Y.Z -m "clihub X.Y.Z" && git push origin --tags`.
 
 `release.yml` then runs the tests, refuses a tag that disagrees with
-`__version__`, publishes to PyPI, and points `nitkrar/homebrew-tap` at the sdist
-PyPI is serving. The formula names that sdist rather than a GitHub tag archive,
-so brew can only ever offer a version pip already has, and a release that failed
-to publish leaves the tap alone.
+`__version__`, publishes to PyPI, cuts the GitHub release, and points
+`nitkrar/homebrew-tap` at the sdist PyPI is serving. The formula names that
+sdist rather than a GitHub tag archive, so brew can only ever offer a version
+pip already has, and a release that failed to publish leaves the tap alone.
+
+Running `release.yml` by hand against an existing tag does the tap half only.
 
 Two credentials, both configured once and neither stored in the repository:
 
