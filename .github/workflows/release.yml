@@ -103,10 +103,10 @@ jobs:
 
           formula = pathlib.Path("Formula/clihub.rb")
           body = formula.read_text(encoding="utf-8")
-          body, urls = re.subn(r'^(\s*)url ".*"$',
+          body, urls = re.subn(r'^(  )url ".*"$',
                                lambda m: f'{m[1]}url "{os.environ["SDIST_URL"]}"',
                                body, count=1, flags=re.M)
-          body, hashes = re.subn(r'^(\s*)sha256 ".*"$',
+          body, hashes = re.subn(r'^(  )sha256 ".*"$',
                                  lambda m: f'{m[1]}sha256 "{os.environ["SDIST_SHA256"]}"',
                                  body, count=1, flags=re.M)
           if (urls, hashes) != (1, 1):

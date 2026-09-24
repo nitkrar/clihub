@@ -179,8 +179,8 @@ class RegistryTests(ClihubFixture):
             self.assertNotIn("what is this command for", result.stderr)
 
         with self.subTest("abandoning the prompt aborts the add"):
-            # EOT waits in the buffer; closing the terminal races the child,
-            # which then sees no terminal and never asks.
+            # Send terminal EOF without closing the pty, so stdin is still a tty
+            # when the prompt path runs.
             result = self.run_cli_tty("registry", "add", "abandoned", "--", str(tool),
                                       send="\x04")
             self.assertEqual(result.returncode, 130, result.stderr)

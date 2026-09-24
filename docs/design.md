@@ -44,8 +44,9 @@ personal tools, without the entry point knowing tool-specific semantics.**
 - C2. The dispatch path resolves one registered entry and forwards the remaining argv
   unchanged. A stored command prefix may be prepended, but the user's tail is never
   rewritten.
-- C3. clihub's only global flags are `--help` and `--version`, both of which answer
-  about clihub itself. No flag of clihub's may change how a tool is dispatched.
+- C3. clihub's only global flags are help and version (`-h`/`--help`, `-V`/`--version`),
+  all of which answer about clihub itself. No flag of clihub's may change how a tool
+  is dispatched.
 - C4. clihub never parses a tool's arguments.
 - C5. On dispatch, the child inherits stdin, stdout, and stderr. Builtins may capture a
   tool's output only for management work such as probing `--help`.
@@ -458,7 +459,10 @@ ch tools stats [--json]
 
 Notes:
 - `<name>` is `<tool>` or `<namespace>.<tool>`.
-- `ch` itself has no global flags. `--json` belongs to builtins that do not dispatch.
+- `ch`, `ch -h`, `ch --help`, and `ch help` all show clihub's own help.
+- `ch -V` is the short form of `ch --version`.
+- The only global flags are help and version. `--json` belongs to builtins that do not
+  dispatch.
 
 Exit codes:
 
