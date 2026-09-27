@@ -1,9 +1,12 @@
-# Debugging a macOS machine and its network.
+# Debugging a Linux machine and its network.
 #
 # Import with:
-#     ch registry import registries/macos-debug.toml
+#     ch registry import registries/linux-debug.toml
 #
-# Every command here is read-only. The four marked (sudo) will prompt.
+# Every command here is read-only and uses only what a stock distribution
+# ships: procps, iproute2, coreutils, curl and openssl. Without sudo, `ss`
+# and `/proc` hide other users' processes, so run those as root for the
+# whole machine.
 #
 # On the argument rules: clihub appends "$@" only to a single simple
 # command, so anything here that is a pipeline and takes an argument
@@ -13,21 +16,16 @@
 description = "network debugging"
 
 [net.port]
-description = "which process is listening on a TCP port — lsof by port number"
-command = """
-lsof -nP -iTCP:"$@" -sTCP:LISTEN 2>/dev/null || { echo "nothing listening on $*"; exit 0; }
-for pid in $(lsof -nP -iTCP:"$@" -sTCP:LISTEN -t 2>/dev/null | sort -u); do
-  ps -o pid=,args= -p "$pid"
-done
-"""
+description = "which process is listening on a TCP port — ss by port number"
+command = 'ss -ltnp "sport = :$@"'
 
-# lsof names the executable, not the script: a broker started by python
+# `ss` names the executable, not the script: a broker started by python
 # shows as `python3.12`, so the pid is joined back to `ps` for a command
 # line you would recognise.
 [net.listeners]
 description = "list every listening TCP port and socket, with the real process behind it"
 command = """
-lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2, $9}' | sort -u |
+ss -Hltnp | awk '{ pid = "-"; if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4); print pid, $4 }' | sort -u |
 while read -r pid addr; do
   printf '%-24s %-7s %s\\n' "$addr" "$pid" "$(ps -o args= -p "$pid" 2>/dev/null)"
 done
@@ -36,9 +34,7 @@ done
 # Brokers, daemons and docker talk over these, and nothing above shows them.
 [net.unix]
 description = "find unix domain sockets by path — brokers, daemons, docker"
-command = """
-lsof -nP +c 0 -U 2>/dev/null | awk -v p="$@" 'NR>1 && $NF ~ p {printf "%-16s %-7s %s\\n", $1, $2, $NF}' | sort -u
-"""
+command = """ss -xlp | awk -v p="$@" 'NR == 1 || $0 ~ p'"""
 
 [net.reach]
 description = "why is this URL slow or unreachable — curl timing per phase: dns, tcp, tls"
@@ -49,58 +45,67 @@ description = "TLS ssl certificate expiry and subject for a host — openssl"
 command = 'echo | openssl s_client -connect "$1:443" -servername "$@" 2>/dev/null | openssl x509 -noout -subject -dates'
 
 [net.dns]
-description = "dns lookup the way macOS resolves it, not the way dig does"
-command = 'dscacheutil -q host -a name "$@"'
+description = "dns lookup the way programs resolve it, through nsswitch, not the way dig does"
+command = """getent ahosts "$@" | awk '!seen[$1]++ { print $1 }'"""
 
 [net.resolvers]
 description = "which dns servers and resolvers this machine uses, in what order"
-command = "scutil --dns"
+command = """
+if command -v resolvectl >/dev/null; then resolvectl status; else cat /etc/resolv.conf; fi
+"""
 
 [net.primary]
 description = "which network interface wifi ethernet is actually carrying traffic"
-command = "scutil --nwi"
+command = "ip route get 1.1.1.1"
 
 [net.proxy]
 description = "proxy and vpn tunnel settings deciding where network traffic goes"
 command = """
-scutil --proxy
 env | grep -i _proxy || echo 'no proxy environment variables'
-ifconfig | grep -E '^(utun|ppp|ipsec)' || echo 'no tunnels up'
+ip -brief link | grep -E '^(tun|wg|ppp|tailscale)' || echo 'no tunnels up'
 """
 
+# Linux `ps` reports %cpu averaged over a process's whole life, so a process
+# that started spinning a minute ago barely registers. Everything ranking by
+# cpu here samples twice, a second apart, instead.
 [cpu]
 description = "processor load"
 
 [cpu.top]
-description = "what is using my cpu — heaviest processes by processor usage"
-command = "ps -A -o pid,%cpu,%mem,comm | sort -k2 -rn | head -15"
+description = "what is using my cpu — heaviest processes by processor usage over the last second"
+command = "top -b -n 2 -d 1 -o %CPU -w 200 | awk '/^top -/ { n++ } n == 2' | head -22"
 
+# Linux counts processes blocked on disk in the load average, so a high load
+# with idle cores is waiting on I/O rather than short of cpu.
 [cpu.load]
 description = "cpu load average against core count — is this machine busy or slow"
 command = """
 uptime
-echo "cores: $(sysctl -n hw.ncpu)"
+echo "cores: $(nproc)"
+echo "blocked on io: $(ps -A -o state= | grep -c D)"
 """
 
 # Rolled up by process group: a job's workers share one, so fifty processes
 # at ten percent are one row naming what to stop, with `kill -- -PGID`.
+# The command in /proc/PID/stat is in parentheses and may hold spaces, so the
+# fields are counted from the last `)`.
 [cpu.hogs]
 description = "is this machine overloaded thrashing, and which process group job is hogging the cpu"
 command = """
 uptime
-echo "cores: $(sysctl -n hw.ncpu)"
+echo "cores: $(nproc)"
 printf '%7s %8s %6s  %-7s %s\\n' CPU% RSS PROCS PGID LEADER
-ps -A -o pgid=,pid=,pcpu=,rss=,comm= | awk '
-  { g = $1; leader = $1 == $2; cpu[g] += $3; rss[g] += $4; n[g]++
-    $1 = $2 = $3 = $4 = ""; sub(/^ +/, ""); k = split($0, part, "/")
-    if (leader || !(g in lead)) lead[g] = part[k] }
+{ cat /proc/[0-9]*/stat; echo; sleep 1; cat /proc/[0-9]*/stat; } 2>/dev/null |
+awk -v hz="$(getconf CLK_TCK)" -v page="$(getconf PAGESIZE)" '
+  /^$/ { second = 1; next }
+  { match($0, /.*\\)/); name = substr($0, index($0, "(") + 1, RLENGTH - index($0, "(") - 1)
+    split(substr($0, RLENGTH + 2), f, " "); pid = $1; used = f[12] + f[13] }
+  !second { before[pid] = used; next }
+  { g = f[3]; cpu[g] += (used - before[pid]) * 100 / hz; rss[g] += f[22] * page / 1024; n[g]++
+    if (pid == g || !(g in lead)) lead[g] = name }
   END { for (g in cpu) printf "%7.1f %7.0fM %6d  %-7s %s\\n", cpu[g], rss[g] / 1024, n[g], g, lead[g] }
 ' | sort -rn | head -10
 """
-
-[cpu.busy]
-description = "per-process cpu and energy power usage over one sample (sudo)"
-command = "sudo powermetrics -n 1 --samplers tasks"
 
 [mem]
 description = "memory"
@@ -109,11 +114,13 @@ description = "memory"
 description = "what is using my memory ram — heaviest processes by resident size"
 command = "ps -A -o pid,%mem,rss,comm | sort -k2 -rn | head -15"
 
+# `some avg10` in the pressure line is the share of the last ten seconds a
+# task spent waiting on memory: a few percent is paging, tens is thrashing.
 [mem.hogs]
 description = "is memory ram thrashing swapping, and which process group job is holding the most"
 command = """
-memory_pressure | tail -1
-sysctl vm.swapusage
+free -h
+cat /proc/pressure/memory 2>/dev/null
 printf '%8s %6s  %-7s %s\\n' RSS PROCS PGID LEADER
 ps -A -o pgid=,pid=,rss=,comm= | awk '
   { g = $1; leader = $1 == $2; rss[g] += $3; n[g]++
@@ -124,27 +131,31 @@ ps -A -o pgid=,pid=,rss=,comm= | awk '
 """
 
 [mem.pressure]
-description = "memory pressure: free ram percentage, swap pageins and pageouts"
-command = "memory_pressure | tail -5"
+description = "memory pressure: free ram, and how long tasks stalled waiting on memory"
+command = """
+free -h
+cat /proc/pressure/memory 2>/dev/null || echo 'no pressure stall information in this kernel'
+"""
 
-[mem.compressor]
-description = "compressed memory and swap — what macOS compresses before swapping"
-command = "vm_stat | grep -E 'page size|compressor|wired|free'"
+# si and so are pages swapped in and out per second; sustained non-zero
+# values in both is the machine thrashing.
+[mem.swap]
+description = "swap devices and live swap in and out traffic — vmstat over five seconds"
+command = """
+swapon --show
+vmstat 1 5
+"""
 
 [disk]
 description = "storage"
 
 [disk.free]
-description = "disk space and storage free on the data volume — the df line that matters on APFS"
-command = "df -h /System/Volumes/Data"
+description = "disk space and storage free on every real filesystem, df"
+command = "df -h -x tmpfs -x devtmpfs -x overlay -x squashfs"
 
 [disk.hogs]
 description = "what is using my disk space — biggest directories under a path, du"
 command = 'du -sh "$@"/* 2>/dev/null | sort -h | tail -20'
-
-[disk.busy]
-description = "which process is writing to disk right now — live filesystem io (sudo)"
-command = "sudo fs_usage -w -f filesystem"
 
 [proc]
 description = "processes"
@@ -158,21 +169,20 @@ description = "every process in one process group by pgid — what a hogs row wo
 command = """ps -A -o pgid,pid,ppid,state,etime,%cpu,rss,args | awk -v g="$@" 'NR == 1 || $1 == g'"""
 
 [proc.stuck]
-description = "why is this process stuck hung frozen — five second stack sample"
-command = 'sample "$@" 5'
+description = "why is this process stuck hung frozen — where it waits in the kernel (sudo)"
+command = """
+cat /proc/"$@"/wchan; echo
+sudo cat /proc/"$@"/stack
+"""
 
 [proc.fds]
-description = "open file descriptor count for a process — fd leak check, lsof"
-command = 'lsof -p "$@" | wc -l'
+description = "open file descriptor count for a process — fd leak check"
+command = 'ls /proc/"$@"/fd | wc -l'
 
 [proc.sockets]
-description = "which network sockets and ports a process has open — lsof by pid"
-command = 'lsof -p "$@" -a -i'
+description = "which network sockets and ports a process has open — ss by pid"
+command = """ss -tunap | awk -v p="pid=$@," 'NR == 1 || index($0, p)'"""
 
 [proc.orphans]
-description = "leftover orphan processes reparented to launchd after their parent died"
+description = "leftover orphan processes reparented to init after their parent died"
 command = "ps -eo pid,ppid,pgid,etime,args | awk '$2==1 && $1!=$3'"
-
-[proc.net]
-description = "which process is using network bandwidth — per-process throughput (sudo)"
-command = "sudo nettop -P"

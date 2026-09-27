@@ -331,14 +331,33 @@ class SetupTests(ClihubFixture):
             self.assertTrue((told / "clihub" / "SKILL.md").is_file())
             self.assertNotIn("where?", result.stdout + result.stderr)
 
-    @unittest.skipUnless(sys.platform == "darwin", "the shipped registry is macOS-only")
-    def test_init_offers_the_macos_registry_where_it_can_run(self) -> None:
+    @unittest.skipUnless(sys.platform in ("darwin", "linux"), "no registry ships for it")
+    def test_init_offers_the_registry_for_this_platform_only(self) -> None:
+        import tomllib
+
+        def names(path: Path) -> set[str]:
+            found: set[str] = set()
+
+            def walk(table: dict, prefix: str) -> None:
+                for key, value in table.items():
+                    if isinstance(value, dict):
+                        if "command" in value:
+                            found.add(prefix + key)
+                        walk(value, f"{prefix}{key}.")
+
+            walk(tomllib.loads(path.read_text()), "")
+            return found
+
+        ours, theirs = ("macos", "linux") if sys.platform == "darwin" else ("linux", "macos")
+        expected = names(ROOT / "registries" / f"{ours}-debug.toml")
+        foreign = names(ROOT / "registries" / f"{theirs}-debug.toml") - expected
+
         result = self.run_cli_tty("init", "--no-link", "--no-skill",
-                                  "--skill-dir", str(self.base / "unused"), send="y\n")
+                                  "--skill-dir", str(self.base / "unused"), send="y\ny\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        listed = self.run_cli("list").stdout
-        self.assertIn("net.listeners", listed)
-        self.assertIn("cpu.top", listed)
+        listed = set(self.run_cli("list").stdout.split())
+        self.assertLessEqual(expected, listed)
+        self.assertFalse(foreign & listed, "imported the other platform's registry")
 
     def test_clihub_writes_only_inside_its_configured_roots(self) -> None:
         """Everything lands under the one root, and the disposable parts in
